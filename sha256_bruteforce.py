@@ -12,12 +12,15 @@ import string
 import subprocess
 import sys
 import tempfile
+import time
 
 try:
     from tqdm import tqdm
+    _HAS_TQDM = True
 except ImportError:
     def tqdm(iterable, **kwargs):
         return iterable
+    _HAS_TQDM = False
 
 # Default: 6-char secret
 TARGET_HASH_6 = "9994a0007e4271061b671424371f3f04dce63520b25ef9036fa45f3439e2f062"
@@ -43,10 +46,9 @@ def crack_gpu(target: str, length: int) -> str | None:
         hashfile = f.name
     outfile = hashfile + ".out"
     try:
-        # -m 1400 = SHA256, -a 3 = mask, -1 ?l?u?d = our 62-char set, --quiet = no banner
+        # -m 1400 = SHA256, -a 3 = mask, -1 ?l?u?d = our 62-char set; no --quiet so hashcat shows progress on GPU
         subprocess.run(
-            [hashcat, "-m", "1400", "-a", "3", hashfile, "-1", "?l?u?d", mask, "--quiet", "-o", outfile, "--potfile-disable"],
-            capture_output=True,
+            [hashcat, "-m", "1400", "-a", "3", hashfile, "-1", "?l?u?d", mask, "-o", outfile, "--potfile-disable"],
             timeout=3600,
         )
         try:
@@ -65,14 +67,17 @@ def crack_gpu(target: str, length: int) -> str | None:
             except OSError:
                 pass
 
+# Default target hashes by length (so -n 4 uses the 4-char hash, etc.)
+DEFAULT_HASH_BY_LENGTH = {4: TARGET_HASH_4, 6: TARGET_HASH_6}
+
 def main():
     p = argparse.ArgumentParser(description="Brute force SHA-256 for fixed-length [a-zA-Z0-9].")
     p.add_argument("-n", "--length", type=int, default=6, help="Character length (default 6)")
-    p.add_argument("-t", "--target", default=TARGET_HASH_6, help="Target SHA-256 hex (default 6-char hash)")
+    p.add_argument("-t", "--target", default=None, help="Target SHA-256 hex (default: use built-in hash for chosen length)")
     p.add_argument("--gpu", action="store_true", help="Use GPU via hashcat (NVIDIA, e.g. RTX 5090)")
     args = p.parse_args()
     length = args.length
-    target = args.target.strip().lower()
+    target = (args.target or DEFAULT_HASH_BY_LENGTH.get(length) or TARGET_HASH_6).strip().lower()
     total = len(CHARS) ** length
 
     if args.gpu:
@@ -90,18 +95,34 @@ def main():
 
     print(f"Length {length}, charset size {len(CHARS)}, total candidates: {total}", flush=True)
     tried = 0
-    pbar = tqdm(itertools.product(CHARS, repeat=length), total=total, unit=" cand", unit_scale=True, ncols=100, mininterval=0.5)
-    for t in pbar:
+    start = time.perf_counter()
+    last_print_tried = 0
+    last_print_time = start
+    interval_sec = 1.0
+    iterator = itertools.product(CHARS, repeat=length)
+    use_tqdm = _HAS_TQDM and sys.stdout.isatty()
+    if use_tqdm:
+        iterator = tqdm(iterator, total=total, unit=" cand", unit_scale=True, ncols=100, mininterval=0.5)
+    for t in iterator:
         candidate = "".join(t)
         tried += 1
         if sha256_hex(candidate) == target:
-            if hasattr(pbar, "close"):
-                pbar.close()
+            if use_tqdm and hasattr(iterator, "close"):
+                iterator.close()
             print(f"\n[+] FOUND: {candidate!r}")
             print(f"    Tried {tried} candidates.")
             return
-    if hasattr(pbar, "close"):
-        pbar.close()
+        if not use_tqdm:
+            now = time.perf_counter()
+            if now - last_print_time >= interval_sec or tried - last_print_tried >= 500_000:
+                elapsed = now - start
+                rate = tried / elapsed if elapsed > 0 else 0
+                eta_sec = (total - tried) / rate if rate > 0 else 0
+                pct = 100.0 * tried / total
+                print(f"\r  {tried:,} / {total:,} ({pct:.1f}%) | {elapsed:.0f}s elapsed | ~{eta_sec:.0f}s left ", end="", flush=True)
+                last_print_tried, last_print_time = tried, now
+    if use_tqdm and hasattr(iterator, "close"):
+        iterator.close()
     print("\n[-] No match (tried {} candidates).".format(tried))
 
 if __name__ == "__main__":
