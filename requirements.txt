@@ -1,2 +1,3 @@
-# SHA256 password cracker – Python scripts use stdlib only; no packages required.
+# SHA256 password cracker
+tqdm>=4.66.0   # progress bar and ETA for sha256_bruteforce.py
 # Optional: install hashcat on your system (not via pip) to use --gpu with sha256_bruteforce.py.

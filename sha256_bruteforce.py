@@ -13,6 +13,12 @@ import subprocess
 import sys
 import tempfile
 
+try:
+    from tqdm import tqdm
+except ImportError:
+    def tqdm(iterable, **kwargs):
+        return iterable
+
 # Default: 6-char secret
 TARGET_HASH_6 = "9994a0007e4271061b671424371f3f04dce63520b25ef9036fa45f3439e2f062"
 TARGET_HASH_4 = "3803b47609a2a464054659b14a0cdfba92830fb46ee70c03a336d5554b9acad4"  # c0de
@@ -84,16 +90,19 @@ def main():
 
     print(f"Length {length}, charset size {len(CHARS)}, total candidates: {total}", flush=True)
     tried = 0
-    for t in itertools.product(CHARS, repeat=length):
+    pbar = tqdm(itertools.product(CHARS, repeat=length), total=total, unit=" cand", unit_scale=True, ncols=100, mininterval=0.5)
+    for t in pbar:
         candidate = "".join(t)
         tried += 1
         if sha256_hex(candidate) == target:
-            print(f"[+] FOUND: {candidate!r}")
+            if hasattr(pbar, "close"):
+                pbar.close()
+            print(f"\n[+] FOUND: {candidate!r}")
             print(f"    Tried {tried} candidates.")
             return
-        if tried % 1_000_000 == 0:
-            print(f"Tried {tried} candidates...", flush=True)
-    print(f"[-] No match (tried {tried} candidates).")
+    if hasattr(pbar, "close"):
+        pbar.close()
+    print("\n[-] No match (tried {} candidates).".format(tried))
 
 if __name__ == "__main__":
     main()
