@@ -82,8 +82,8 @@ def main():
 
     if args.gpu:
         if platform.system() == "Darwin":
-            print("Note: You're on macOS. NVIDIA GPUs (e.g. RTX 5070) are only used when you run this script on a Windows/Linux PC with the GPU and hashcat installed. Here we'll try hashcat if present (often CPU-only on Mac).", file=sys.stderr)
-        print(f"Length {length}, charset [a-zA-Z0-9], total candidates: {total} (GPU via hashcat)", flush=True)
+            print("Note: On macOS, hashcat runs in CPU/OpenCL mode (no NVIDIA). Still faster than Python in many cases.", file=sys.stderr)
+        print(f"Length {length}, charset [a-zA-Z0-9], total candidates: {total} (hashcat)", flush=True)
         password = crack_gpu(target, length)
         if password is not None:
             print(f"[+] FOUND: {password!r}")
